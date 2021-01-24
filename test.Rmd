@@ -1,0 +1,114 @@
+---
+title: "test"
+author: "Jong-Hoon Kim"
+date: "1/23/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+theta <- data.table::fread("inst/extdata/theta.csv")
+y0 <- data.table::fread("inst/extdata/y0.csv")
+usethis::use_data(theta, overwrite = T)
+usethis::use_data(y0, overwrite = T)
+devtools::document()
+
+```
+# Check functions
+## process_model
+```{r}
+nparticle <- 100
+tend <- 20
+beta <- theta[name =="R0", val] * theta[name =="gamma", val]
+# volatility for beta (random walk)
+beta_vol <- matrix(rnorm(nparticle * tend, mean = 0, sd = theta[name == "betavol", val]), nrow = tend)
+beta_vol[1,] <- exp(beta_vol[1,]) * beta # initial beta
+y <- data.frame(matrix(0, nrow = nparticle, ncol = nrow(y0)))
+names(y) <- y0[["name"]]
+y[,"S"] <- 1e7
+y[,"I"] <- 100
+yt <- y1 <- process_model(theta = theta, y = y, beta = beta_vol[1,])
+for (i in 1:100) {
+  yt <- process_model(theta = theta, y = yt, beta = beta_vol[1,])
+}
+head(y1)
+head(yt)
+head(beta_vol[1,])
+```
+## Rt data generation
+```{r}
+nt <- 200 # days
+presymp_infect <- TRUE
+param <- list()
+param$sigma <- 1/4
+param$gamma <- 1/4
+param$R <- c(rep(1.2, nt/4), rep(1.4, nt/4), rep(0.8, nt/4), rep(1.2, nt/4))
+param$presymp_infect <- FALSE
+times <- 0:(nt-1) # simulation times
+y0 <- c(S = 1e7, E1 = 40, E2 = 40, I = 100, R = 0, CE1 = 0,  CE2 = 0, CI = 0) # initial values
+
+library(deSolve) 
+library(tidyverse)
+
+ode(func = se1e2ir, y = y0, times = times, parms = param) %>%
+  as.data.frame() -> out
+
+inf_daily <- diff(out$CE1)
+onset_daily <- diff(out$CI)
+confirm_daily <- diff(out$R)
+
+df <- data.frame(t = 1:length(param$R), 
+                 daily_R_true = param$R, 
+                 daily_infect = c(0, inf_daily),
+                 daily_onset = c(0, onset_daily),
+                 daily_confirm = c(0, confirm_daily))
+
+df %>% 
+  pivot_longer(cols = -t, names_to = "var") %>%
+  filter(var != "daily_R_true") %>% 
+  ggplot(aes(t, value, color = var)) +
+  geom_line() +
+  labs(x = "time (day)", y = "number of individuals")
+Rt_data <- df
+usethis::use_data(Rt_data, overwrite = T)
+```
+## particle_filter
+```{r}
+pf <- particle_filter(theta = theta, 
+                      y = y0, 
+                      data = Rt_data,
+                      data_type = "infection",
+                      nparticle = 1e2, 
+                      tend = 200, 
+                      dt = 0.2)
+
+pf$lik
+df <- cbind(Rt_data[,1:2], Rt = pf$beta_trace/theta[name == "gamma", val])
+library(tidyverse)
+df %>% pivot_longer(cols = -t) %>% 
+  ggplot(aes(t, value, color = name)) + 
+  geom_line() + 
+  geom_point()
+```
+
+## repeat particle_filter and sample
+```{r}
+res <- run_model(theta = theta,
+          y = y0,
+          data = Rt_data,
+          data_type = "confirm",
+          rep = 100,
+          nparticle = 100,
+          tend = 200,
+          dt = 0.2)
+          
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(res$Rt, 1, function(x) {quantile(x, pr)})))
+df <- cbind(Rt_quantile, Rt_data[,1:2])
+df %>% 
+  pivot_longer(cols = - t) %>%
+  ggplot(aes(t, value, color = name)) +
+  geom_line() +
+  geom_point()
+```
