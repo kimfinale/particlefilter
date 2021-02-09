@@ -14,7 +14,7 @@ run_model <- function (theta = NULL,
                        data = NULL,
                        data_type = c("infection", "symptom onset", "confirmation"),
                        rep = 1,
-                       nparticle = 100,
+                       npart = 100,
                        tend = 2,
                        dt = 0.2) {
   # rep <- 10; nparticle <- 100; cut_off=0
@@ -26,16 +26,18 @@ run_model <- function (theta = NULL,
 
   for (i in 1:rep) {
     cat( "i = ", i, "\n" )
-    res <- particle_filter(theta = theta, y = y, data = data, data_type = type, nparticle = nparticle, tend = tend, dt = dt)
-    output$S[, i] <- res$S_trace
-    output$E1[, i] <- res$E1_trace
-    output$E2[, i] <- res$E2_trace
-    output$I[, i] <- res$I_trace
-    output$R[, i] <- res$R_trace
-    output$CE1[, i] <- res$CE1_trace
-    output$CE2[, i] <- res$CE2_trace
-    output$CI[, i] <- res$CI_trace
-    output$Rt[, i] <- res$beta_trace/theta[name == "gamma", val]
+    res <- particle_filter(theta = theta, y = y, data = data, data_type = type, npart = npart, tend = tend, dt = dt)
+    lapply(y0[["name"]], function(z) output[[z]][,i] <- res$trace[[z]])
+    # output$S[, i] <- res$trace$S
+    # output$E1[, i] <- res$trace$E1
+    # output$E2[, i] <- res$trace$E2
+    # output$I[, i] <- res$trace$I
+    # output$R[, i] <- res$trace$R
+    # output$CE1[, i] <- res$trace$CE1
+    # output$CE2[, i] <- res$trace$CE2
+    # output$CI[, i] <- res$trace$CI
+    #
+    output$Rt[, i] <- res$trace$beta/theta[name == "gamma", val]
   }
   return (output)
   # saveRDS(output, file = paste0("outputs/fit_", filename, ".rds"))

@@ -8,12 +8,11 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-theta <- data.table::fread("inst/extdata/theta.csv")
-y0 <- data.table::fread("inst/extdata/y0.csv")
-usethis::use_data(theta, overwrite = T)
-usethis::use_data(y0, overwrite = T)
-devtools::document()
-
+# theta <- data.table::fread("inst/extdata/theta.csv")
+# y0 <- data.table::fread("inst/extdata/y0.csv")
+# usethis::use_data(theta, overwrite = T)
+# usethis::use_data(y0, overwrite = T)
+# devtools::document()
 ```
 # Check functions
 ## process_model
@@ -70,25 +69,46 @@ df %>%
   ggplot(aes(t, value, color = var)) +
   geom_line() +
   labs(x = "time (day)", y = "number of individuals")
-Rt_data <- df
-usethis::use_data(Rt_data, overwrite = T)
+# Rt_data <- df
+# usethis::use_data(Rt_data, overwrite = T)
 ```
-## particle_filter
+## particle_filter - sample
 ```{r}
 pf <- particle_filter(theta = theta, 
                       y = y0, 
                       data = Rt_data,
-                      data_type = "infection",
-                      nparticle = 1e2, 
+                      data_type = "symptom",
+                      npart = 1e3, 
                       tend = 200, 
                       dt = 0.2)
 
 pf$lik
-df <- cbind(Rt_data[,1:2], Rt = pf$beta_trace/theta[name == "gamma", val])
-library(tidyverse)
+df <- cbind(Rt_data[,1:2], Rt_pf = pf$trace$beta/theta[name == "gamma", val])
+suppressPackageStartupMessages(library(tidyverse))
 df %>% pivot_longer(cols = -t) %>% 
   ggplot(aes(t, value, color = name)) + 
   geom_line() + 
+  geom_point()
+```
+
+## particle_filter - filtered distribution
+```{r}
+pf <- particle_filter(theta = theta, 
+                      y = y0, 
+                      data = Rt_data,
+                      data_type = "symptom",
+                      npart = 1e3, 
+                      tend = 200, 
+                      dt = 0.2)
+
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(pf$beta_filtered/theta[name == "gamma", val], 1, function(x) {quantile(x, pr)})))
+df <- cbind(Rt_quantile, Rt_data[,1:2])
+suppressPackageStartupMessages(library(tidyverse))
+df %>% 
+  pivot_longer(cols = - t) %>%
+  ggplot(aes(t, value, color = name)) +
+  geom_line() +
   geom_point()
 ```
 
@@ -97,18 +117,50 @@ df %>% pivot_longer(cols = -t) %>%
 res <- run_model(theta = theta,
           y = y0,
           data = Rt_data,
-          data_type = "confirm",
+          data_type = "infection",
           rep = 100,
-          nparticle = 100,
+          npart = 1000,
           tend = 200,
           dt = 0.2)
           
 pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 Rt_quantile <- as.data.frame(t(apply(res$Rt, 1, function(x) {quantile(x, pr)})))
-df <- cbind(Rt_quantile, Rt_data[,1:2])
+library(data.table)
+df <- cbind(Rt_quantile, Rt_data[,1:2], data.frame(pf_Rt_rollmean = frollmean(Rt_quantile[,3], n=7)))
+suppressPackageStartupMessages(library(tidyverse))
 df %>% 
   pivot_longer(cols = - t) %>%
   ggplot(aes(t, value, color = name)) +
   geom_line() +
   geom_point()
+
+# library(data.table)
+# df <- data.frame(pf_Rt_rollmean = frollmean(Rt_quantile[,3], n=7))
+# df <- cbind(Rt_data[,1:2], df)
+# df %>% 
+#   pivot_longer(cols = - t) %>%
+#   ggplot(aes(t, value, color = name)) +
+#   geom_line() +
+#   geom_point()
 ```
+## Maximum likelihood estimation test
+```{r}
+# devtools::load_all(".")
+mle <- maxlik(theta = theta,
+              y = y0, 
+              data = Rt_data,
+              data_type = "infection",
+              tend = 200, 
+              dt = 0.2)
+
+df <- cbind(Rt_data[,1:2], (mle$beta_trace/theta[name == "gamma", val]))
+suppressPackageStartupMessages(library(tidyverse))
+df %>% 
+  pivot_longer(cols = - t) %>%
+  ggplot(aes(t, value, color = name)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "R(t) via Maximum likelihood", y = "R(t)", x = "Day")
+
+```
+
