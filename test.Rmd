@@ -137,7 +137,7 @@ df %>%
   ggplot(aes(t, value, color = name)) +
   geom_line() +
   geom_point() +
-  labs(title = "R(t) via Maximum likelihood", y = "R(t)", x = "Day")
+  labs(title = "R(t) via maximum likelihood", y = "R(t)", x = "Day")
 
 ```
 
