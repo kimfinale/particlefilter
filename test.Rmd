@@ -8,9 +8,9 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-# theta <- data.table::fread("inst/extdata/theta.csv")
+# theta0 <- data.table::fread("inst/extdata/theta.csv")
 # y0 <- data.table::fread("inst/extdata/y0.csv")
-# usethis::use_data(theta, overwrite = T)
+# usethis::use_data(theta0, overwrite = T)
 # usethis::use_data(y0, overwrite = T)
 # devtools::document()
 ```
@@ -74,13 +74,7 @@ df %>%
 ```
 ## particle_filter - sample
 ```{r}
-pf <- particle_filter(theta = theta, 
-                      y = y0, 
-                      data = Rt_data,
-                      data_type = "symptom",
-                      npart = 1e3, 
-                      tend = 200, 
-                      dt = 0.2)
+pf <- particle_filter(data_type = "symptom", npart = 1e3)
 
 pf$lik
 df <- cbind(Rt_data[,1:2], Rt_pf = pf$trace$beta/theta[name == "gamma", val])
@@ -93,13 +87,7 @@ df %>% pivot_longer(cols = -t) %>%
 
 ## particle_filter - filtered distribution
 ```{r}
-pf <- particle_filter(theta = theta, 
-                      y = y0, 
-                      data = Rt_data,
-                      data_type = "symptom",
-                      npart = 1e3, 
-                      tend = 200, 
-                      dt = 0.2)
+pf <- particle_filter(data_type = "infection", npart = 1e3)
 
 pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 Rt_quantile <- as.data.frame(t(apply(pf$beta_filtered/theta[name == "gamma", val], 1, function(x) {quantile(x, pr)})))
@@ -109,19 +97,13 @@ df %>%
   pivot_longer(cols = - t) %>%
   ggplot(aes(t, value, color = name)) +
   geom_line() +
-  geom_point()
+  geom_point() +
+  labs(title = "R(t) via particle filtering", y = "R(t)", x = "Day")
 ```
 
 ## repeat particle_filter and sample
 ```{r}
-res <- run_model(theta = theta,
-          y = y0,
-          data = Rt_data,
-          data_type = "infection",
-          rep = 100,
-          npart = 1000,
-          tend = 200,
-          dt = 0.2)
+res <- run_model(data_type = "infection", rep = 100, npart = 1000)
           
 pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
 Rt_quantile <- as.data.frame(t(apply(res$Rt, 1, function(x) {quantile(x, pr)})))
@@ -146,12 +128,7 @@ df %>%
 ## Maximum likelihood estimation test
 ```{r}
 # devtools::load_all(".")
-mle <- maxlik(theta = theta,
-              y = y0, 
-              data = Rt_data,
-              data_type = "infection",
-              tend = 200, 
-              dt = 0.2)
+mle <- maxlik(data_type = "infection")
 
 df <- cbind(Rt_data[,1:2], (mle$beta_trace/theta[name == "gamma", val]))
 suppressPackageStartupMessages(library(tidyverse))

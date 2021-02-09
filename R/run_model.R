@@ -7,15 +7,15 @@
 #' @param data_type infection, symptom onset, or confirmation
 #' @export
 #' @examples
-#' pop <- setup_population(disease, country); calculate_cases(disease, country, pop)
+#' res <- run_model()
 # Likelihood calc for SMC --------------------------------------------
-run_model <- function (theta = NULL,
-                       y = NULL,
-                       data = NULL,
+run_model <- function (theta = theta0,
+                       y = y0,
+                       data = Rt_data,
                        data_type = c("infection", "symptom onset", "confirmation"),
                        rep = 1,
                        npart = 100,
-                       tend = 2,
+                       tend = 200,
                        dt = 0.2) {
   # rep <- 10; nparticle <- 100; cut_off=0
   ## create a output container using a list

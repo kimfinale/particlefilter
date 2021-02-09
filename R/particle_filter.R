@@ -11,12 +11,12 @@
 #' @import data.table
 #' @examples
 #' sample <- particle_filter(theta, y = y0, npart = 100, dt = 1)
-particle_filter <- function (theta = NULL,
-                            y = NULL,
-                            data = NULL,
+particle_filter <- function (theta = theta0,
+                            y = y0,
+                            data = Rt_data,
                             data_type = c("infection", "symptom onset", "confirmation"),
                             npart = 100,
-                            tend,
+                            tend = 200,
                             dt = 0.2) {
 
   # Assumptions - using daily growth rate
