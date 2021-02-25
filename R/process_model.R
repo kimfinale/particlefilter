@@ -5,15 +5,15 @@
 #' @param tstart start time for simulation with default value of 0
 #' @param tend end time with default value of 1 (i.e., one day process of SEI1I2R)
 #' @param dt A step size
-#' @param theta Parameters
+#' @param params Parameters
 #' @param y A vector of a vector of state variables
 #' @param beta A vector of beta
 #' @export
 #' @import data.table
 #' @examples
-#' pop <- process_model(theta, y, sdisease, country); calculate_cases(disease, country, pop)
+#' pop <- process_model(params, y, tbegin = 0, tend = 1,)
 # Process model for simulation --------------------------------------------
-process_model <- function (theta = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0.2, beta = NULL) {
+process_model <- function (params = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0.2, beta = NULL) {
   S <- y[, "S"]
   E1 <- y[, "E1"]
   E2 <- y[, "E2"]
@@ -25,8 +25,8 @@ process_model <- function (theta = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0.
 
   pop <- S + E1 + E2 + I + R
   infect_rate <- beta / pop * dt
-  incub_rate <- theta[name == "sigma", val] * 2 * dt # as two compartments
-  removal_rate <- theta[name == "gamma", val] * dt
+  incub_rate <- params[["sigma"]] * 2 * dt # as two compartments
+  removal_rate <- params[["gamma"]] * dt
 
   for (ii in seq((tbegin + dt), tend, dt)) {
     foi <- I * infect_rate
@@ -45,14 +45,9 @@ process_model <- function (theta = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0.
     CE2 <- CE2 + E1_to_E2
     CI <- CI + E2_to_I
   }
-  y[, "S"] <- S
-  y[, "E1"] <- E1
-  y[, "E2"] <- E2
-  y[, "I"] <- I
-  y[, "R"] <- R
-  y[, "CE1"] <- CE1
-  y[, "CE2"] <- CE2
-  y[, "CI"] <- CI
+
+  nm <- c("S", "E1", "E2", "I", "R", "CE1", "CE2", "CI")
+  for (s in nm) y[, s] <- eval(parse(text = s))
 
   return(y)
 }

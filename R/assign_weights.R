@@ -28,7 +28,7 @@ assign_weights <- function (var,
   }
 
   if (!is.na(case_data)) {
-    expected_val <- pmax(0, case_expected)
+    expected_val <- pmax(0, case_expected)# case_expected is a vector of length npart
     log_lik <- dpois(as.integer(case_data), lambda = expected_val, log = T)
   }
   else {
