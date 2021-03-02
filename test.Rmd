@@ -147,7 +147,7 @@ ggplot(df, aes(x = t)) +
   geom_line(aes(y = `50%`), size = 1) + 
   geom_line(aes(y = mean), color = "steelblue", size = 1) + 
   geom_point(aes(y = daily_R_true), color = "darkred") +
-  labs(title = "R(t) via particle filtering with smooothing", y = "R(t)", x = "Day")
+  labs(title = "R(t) via particle filtering with backward sampling", y = "R(t)", x = "Day")
 
 # library(data.table)
 # df <- data.frame(pf_Rt_rollmean = frollmean(Rt_quantile[,3], n=7))
@@ -315,38 +315,141 @@ microbenchmark(run_model_cpp(data_type = "infection", rep = 1, npart = 1e3, dt =
                run_model(data_type = "infection", rep = 1, npart = 1e3, dt = 0.1), times = 50L)
 
 ```
+
 ## Parallel 
 ```{r}
 library(parallel)
 library(doParallel)
 library(foreach)
-
-cl <- makeCluster(getOption("cl.cores", 10))
+ncores = detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores-2))
 doParallel::registerDoParallel(cl)
 system.time({
-r <- foreach (i=1:50, .combine=cbind, .packages ="particlefilter") %dopar% {
+r <- foreach (i=1:1000, .combine = cbind, .packages ="particlefilter", .inorder = F) %dopar% {
   run_model(params = theta, y = y0, data = Rt_data, data_type = "infection",
-            rep = 1, npart = 100, tend = 200, dt = 0.2, 
+            rep = 1, npart = 1e3, tend = 200, dt = 0.1, 
             systematic_resampling = FALSE)
 }})
 parallel::stopCluster(cl)
 
-cl <- makeCluster(getOption("cl.cores", 10))
-doParallel::registerDoParallel(cl)
-clusterExport(cl = cl, varlist = c("run_model_cpp", "y0", "theta", "Rt_data", "particle_filter_cpp"))
+rt = r[9,] # Rt
+rtdf = data.frame(matrix(unlist(rt), ncol=length(rt), byrow=F))
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(rtdf, 1, function(x) {quantile(x, pr)})))
+library(data.table)
+Rt_mean <- data.frame(mean = rowMeans(rtdf), 
+                      rollmean = frollmean(Rt_quantile[,3], n=7))
+df <- cbind(Rt_quantile, Rt_mean, Rt_data[,1:2])
+suppressPackageStartupMessages(library(tidyverse))
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "grey") +
+  geom_line(aes(y = `50%`), size = 1) + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  geom_point(aes(y = daily_R_true), color = "darkred") +
+  labs(title = "R(t) via particle filtering with backward sampling", y = "R(t)", x = "Day")
+
+# library(tidyverse)
+# rtdf %>% 
+#   mutate(day = 1:n() - 1) %>% 
+#   pivot_longer(cols = - day) %>%
+#   ggplot(aes(x = day))+
+#   geom_line(aes(y = value))
+  
+  
+
+  
+# cl <- makeCluster(getOption("cl.cores", 10))
+# doParallel::registerDoParallel(cl)
+# clusterExport(cl = cl, varlist = c("run_model_cpp", "y0", "theta", "Rt_data", "particle_filter_cpp"))
+# # system.time({
+# # r <- foreach (i=1:50, .combine=cbind, .packages = "particlefilter") %dopar% {
+# #   run_model(data_type = "infection", rep = 1, npart = 1e3, dt = 0.1)
+# # }})
 # system.time({
-# r <- foreach (i=1:50, .combine=cbind, .packages = "particlefilter") %dopar% {
-#   run_model(data_type = "infection", rep = 1, npart = 1e3, dt = 0.1)
+# r <- foreach (i=1:50, .combine=cbind) %dopar% {
+#   run_model_cpp(data_type = "infection", rep = 1, npart = 1e3, dt = 0.1)
 # }})
+# parallel::stopCluster(cl)
+
+```
+
+## KDCA data
+### Data cleaning
+```{r}
+library(readxl)
+suppressMessages(library(tidyverse))
+d <- read_xlsx("data/covid_kdca.xlsx")
+names(d) = c("id", "nationality", "sex", "age", "sido", "sigungu", "date_symptom_onset", "date_diagnosis", "date_report", "route_infection", "country_orgin", "id_infector", "occupation")
+d1 <- d %>% filter(route_infection == "국내")%>% 
+  select(date_diagnosis) %>% 
+  group_by(date = date_diagnosis) %>% 
+  summarise(daily_confirm = n())
+d2 <- data.frame(date = seq(as.Date("2020-01-03"), as.Date("2021-02-23"), by = "day"))
+d2$t <- 1:nrow(d2)
+d3 <- left_join(d2, d1, by = "date")
+dat <- d3 %>% mutate(daily_confirm = ifelse(is.na(daily_confirm), 0, daily_confirm))
+## name standardization
+ggplot(dat, aes(t, daily_confirm)) +
+  geom_line()
+
+```
+
+### Data fitting
+```{r}
+theta[["betavol"]] = 0.6
+ynew <- c(S = 5*1e7, E1 = 40, E2 = 40, I = 1e2, R = 0, CE1 = 0, CE2 = 0, CI = 0)  
+pf <- particle_filter(ydata = dat, data_type = "confirmation", npart = 1e4, tend = 418)
+
+pf$lik_overall_average
+pr <- c(0.025, 0.25, 0.5, 0.75, 0.975)
+Rt_quantile <- as.data.frame(t(apply(pf$beta_filtered/theta[["gamma"]], 1, function(x) {quantile(x, pr)})))
+Rt_mean <- data.frame(mean = rowMeans(pf$beta_filtered/theta[["gamma"]]))
+df <- cbind(Rt_quantile, Rt_mean, dat[,c("t", "date")])
+
+suppressMessages(library(tidyverse))
+ggplot(df, aes(x = t)) +
+  geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`), fill = "grey") +
+  geom_line(aes(y = `50%`), size = 1) + 
+  geom_line(aes(y = mean), color = "steelblue", size = 1) + 
+  labs(title = "R(t) via particle filtering", y = "R(t)", x = "Day") +
+  geom_hline(yintercept = 1, color = "darkred", linetype = "dotted") + 
+  scale_y_continuous(limits = c(0, 100))
+
+ci <- t(pf$latent_var_filtered[,,8])
+daily_confirm <- diff(ci)
+for (i in 1:ncol(daily_confirm)){ 
+  if (sum(daily_confirm[, i] < 0) > 0) {
+    cat("part =", i, "\n"); stop("negative")
+  }
+}
+plot(daily_confirm[,1], cex = 0.4)
+abline(h = 0, col = 2)
+points(dat$t, dat$daily_confirm, col = 3, cex = 0.5)
+
+sum(daily_confirm < 0)
+ci <- t(apply(pf$latent_var_filtered[,,8], 2, function(x) {quantile(x, pr)}))
+
+daily_confirm <- diff(ci)
+```
+
+### Data fitting
+```{r}
+library(parallel)
+library(doParallel)
+library(foreach)
+ncores = detectCores()
+cl <- makeCluster(getOption("cl.cores", ncores-2))
+doParallel::registerDoParallel(cl)
+clusterExport(cl = cl, varlist = c("dat"), envir = .GlobalEnv)
 system.time({
-r <- foreach (i=1:50, .combine=cbind) %dopar% {
-  run_model_cpp(data_type = "infection", rep = 1, npart = 1e3, dt = 0.1)
+r <- foreach (i=1:1000, .combine = cbind, .packages ="particlefilter", .inorder = F) %dopar% {
+  run_model(params = theta, y = y0, data = dat, data_type = "confirmation",
+            rep = 1, npart = 1e3, tend = 200, dt = 0.1, 
+            systematic_resampling = FALSE)
 }})
 parallel::stopCluster(cl)
 
 ```
-
-
 
 ## Testing arma::cube can be access through _ just like in Rcpp::NumericMatrix
 ```{r}

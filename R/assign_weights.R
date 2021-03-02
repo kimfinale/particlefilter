@@ -34,6 +34,7 @@ assign_weights <- function (var,
   else {
     log_lik <- -Inf
   }
+  cat("sum(is.na(log_lik)) =", sum(is.na(log_lik)), ", sum(log_lik) =", sum(log_lik),"\n")
   return (exp(log_lik)) # convert to normal probability
 }
 

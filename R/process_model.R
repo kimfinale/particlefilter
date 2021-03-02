@@ -30,10 +30,10 @@ process_model <- function (params = NULL, y = NULL, tbegin = 0, tend = 1, dt = 0
 
   for (ii in seq((tbegin + dt), tend, dt)) {
     foi <- I * infect_rate
-    S_to_E1 <- S * foi
-    E1_to_E2 <- E1 * incub_rate
-    E2_to_I <- E2 * incub_rate
-    I_to_R <- I * removal_rate
+    S_to_E1 <- S * (1 - exp(- foi))
+    E1_to_E2 <- E1 * (1 - exp( - incub_rate))
+    E2_to_I <- E2 * (1 - exp( - incub_rate))
+    I_to_R <- I * (1 - exp( - removal_rate))
 
     # Process model for SEIR
     S <- S - S_to_E1
